@@ -3,18 +3,21 @@ import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output, State
 from dash_bootstrap_components._components.Container import Container
 import dash_bootstrap_components as dbc
-import asyncio
-import websockets
-import csv
 import json
 import prediction as pred
+import plotly.express as px
 
 from datetime import datetime
 
-app = Dash(__name__)
+app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 stock_codes = ['AAPL', 'MSFT', 'FB', 'AMZN', 'GOOG', 'TWTR']
-selected_stock_code = stock_codes[0]
+
+prediction_methods = [
+    "XGBoost",
+    "RNN",
+    "LSTM",
+]
 
 PLOTLY_LOGO = "https://images.plot.ly/logo/new-branding/plotly-logomark.png"
 
@@ -35,23 +38,6 @@ stock_code_dropdown = html.Div(
            "align-items": "center", "color": "white", "width": "100%", "margin-left": "10px"},
 )
 
-
-@app.callback(
-    [Output('stock_code_dropdown', 'value'),
-     Output('stock_code_dropdown', 'value')],
-    Input('stock_code_dropdown', 'value'),
-)
-def update_stock_code(code):
-    selected_stock_code = code
-
-    fig = px.scatter(filtered_df, x="gdpPercap", y="lifeExp",
-                     size="pop", color="continent", hover_name="country",
-                     log_x=True, size_max=55)
-
-    fig.update_layout(transition_duration=500)
-    return code, fig
-
-
 navbar = dbc.Navbar(
     dbc.Container(
         [
@@ -65,14 +51,12 @@ navbar = dbc.Navbar(
                     align="center",
                     className="g-0",
                 ),
-                href="https://plotly.com",
                 style={"textDecoration": "none"},
             ),
-            dbc.NavbarToggler(id="navbar-toggler", n_clicks=0),
             dbc.Collapse(
                 stock_code_dropdown,
                 id="navbar-collapse",
-                is_open=False,
+                is_open=True,
                 navbar=True,
             ),
         ]
@@ -80,37 +64,6 @@ navbar = dbc.Navbar(
     color="dark",
     dark=True,
 )
-
-
-# add callback for toggling the collapse on small screens
-@app.callback(
-    Output("navbar-collapse", "is_open"),
-    [Input("navbar-toggler", "n_clicks")],
-    [State("navbar-collapse", "is_open")],
-)
-def toggle_navbar_collapse(n, is_open):
-    if n:
-        return not is_open
-    return is_open
-
-
-train, valid, pred_price = pred.get_predicted_price(code=selected_stock_code)
-# final_data = []
-# for i in range(len(train)):
-#     final_data.append({"Date": train.index[i], "train": train[i], "valid": valid[i], "pred": pred_price[i]})
-fig = go.Figure(
-    [go.Scatter(y=[valid[['Close', 'Predictions']]], mode='lines')])
-
-
-app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-prediction_methods = [
-    "XGBoost",
-    "RNN",
-    "LSTM",
-]
-
-dbc.DropdownMenu()
 
 prediction_method_dropdown = html.Div(
     [
@@ -128,20 +81,50 @@ prediction_method_dropdown = html.Div(
 
 
 @app.callback(
-    Output('prediction_method_dropdown', 'value'),
-    Input('prediction_method_dropdown', 'value'),
+    Output('graph', 'figure'),
+    [
+        Input('stock_code_dropdown', 'value'),
+        Input('prediction_method_dropdown', 'value')
+    ],
 )
-def choose_prediction_method(method):
-    return method
+def update_graph(stock_code, method):
+    return updateFigure(stock_code, method)
 
 
 app.layout = html.Div([
     navbar,
     html.Div([
         prediction_method_dropdown,
-        dcc.Graph(id="graph", figure=fig),
+        dcc.Graph(id="graph"),
     ])
 ])
+
+
+def updateFigure(stock_code, method):
+    train, valid, pred_price = pred.get_predicted_price(
+        stock_code, method,
+    )
+    trace1 = go.Scatter(
+        name="Train",
+        x=train.index,
+        y=train['Close'],
+    )
+    trace2 = go.Scatter(
+        name="Valid",
+        x=valid.index,
+        y=valid['Close'],
+    )
+    trace3 = go.Scatter(
+        name="Predicted",
+        x=valid.index,
+        y=valid['Predictions'],
+    )
+    traces = [trace1, trace2, trace3]
+
+    return go.Figure(data=traces, layout=go.Layout(
+        title=go.layout.Title(
+            text=f"{stock_code} Stock Price Prediction using {method}"),
+    ))
 
 
 app.run_server(debug=True, port='3000')

@@ -1,4 +1,5 @@
 
+import plotly.graph_objects as go
 import math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ plt.style.use('fivethirtyeight')
 scaler = MinMaxScaler(feature_range=(0, 1))
 
 
-def get_valid_array(df):
+def get_valid_array(df, method):
     model = load_model("saved_rnn.h5")
     data = df.filter(['Close'])
     dataset = data.values
@@ -41,7 +42,7 @@ def get_valid_array(df):
     return train, valid
 
 
-def get_predicted_price(code):
+def get_predicted_price(code, method):
     model = load_model("saved_rnn.h5")
     quote = web.DataReader(
         code, data_source='yahoo', start='2018-01-01', end=dt.datetime.now().strftime("%Y-%m-%d"))
@@ -65,16 +66,7 @@ def get_predicted_price(code):
     pred_price = model.predict(X_test)
     # undo the scaling
     pred_price = scaler.inverse_transform(pred_price)
-    print(pred_price)
 
-    train, valid = get_valid_array(quote)
-
-    plt.figure(figsize=(16, 8))
-    plt.title('Model')
-    plt.xlabel('Date', fontsize=18)
-    plt.ylabel('Close Price USD($)', fontsize=18)
-    plt.plot(train['Close'])
-    plt.plot(valid[['Close', 'Predictions']])
-    plt.legend(['Train', 'Val', 'Predictions'], loc='lower right')
+    train, valid = get_valid_array(quote, method)
 
     return train, valid, pred_price
