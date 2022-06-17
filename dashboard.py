@@ -6,8 +6,14 @@ import dash_bootstrap_components as dbc
 import json
 import prediction as pred
 import plotly.express as px
+import asyncio
+from binance.client import Client
 
 from datetime import datetime
+
+api_key = 'NwwA7xRmAq0juYxurtfqmAiW7asFDxB33zQknnaOEmEItWnbR0bVVtjoZLV6tQBy'
+api_secret = 'Lqq5JzhBANnszyHblQwRhKDgrPjfmjDGdcZA7BZdg3e7pJZkir5vRnBTQh8k4ypp'
+apiClient = Client(api_key, api_secret)
 
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -80,15 +86,42 @@ prediction_method_dropdown = html.Div(
 )
 
 
+# @app.callback(
+#     Output('graph', 'figure'),
+#     [
+#         Input('stock_code_dropdown', 'value'),
+#         Input('prediction_method_dropdown', 'value')
+#     ],
+# )
+# def update_graph(stock_code, method):
+#     return updateFigure(stock_code, method)
+
+
 @app.callback(
     Output('graph', 'figure'),
-    [
-        Input('stock_code_dropdown', 'value'),
-        Input('prediction_method_dropdown', 'value')
-    ],
+    Input('graph-update', 'n_intervals')
 )
-def update_graph(stock_code, method):
-    return updateFigure(stock_code, method)
+def update_graph_live(n):
+    df = pd.DataFrame(apiClient.get_historical_klines(
+        "BTCUSDT", Client.KLINE_INTERVAL_1MINUTE))
+    df = df.iloc[:, :6]
+    df.columns = ["Date", "o", "h", "l", "c", "v"]
+    df = df.set_index("Date")
+    df.index = pd.to_datetime(df.index, unit="ms") + pd.Timedelta(hours=7)
+    fig = go.Figure(
+        data=[
+            go.Candlestick(
+                x=df.index,
+                open=df['o'],
+                high=df['h'],
+                low=df['l'],
+                close=df['c'],
+            )
+        ],
+        layout=go.Layout(uirevision='foo')
+    )
+
+    return fig
 
 
 app.layout = html.Div([
@@ -96,6 +129,11 @@ app.layout = html.Div([
     html.Div([
         prediction_method_dropdown,
         dcc.Graph(id="graph"),
+        dcc.Interval(
+            id='graph-update',
+            interval=1000 * 60,
+            n_intervals=0
+        )
     ])
 ])
 
