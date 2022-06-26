@@ -20,17 +20,15 @@ app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 stock_codes = ['AAPL', 'MSFT', 'FB', 'AMZN', 'GOOG', 'TWTR']
 
 prediction_methods = [
-    "XGBoost",
-    "RNN",
     "LSTM",
+    "RNN",
+    "XGBoost",
 ]
 
 PLOTLY_LOGO = "https://images.plot.ly/logo/new-branding/plotly-logomark.png"
 
 stock_code_dropdown = html.Div(
     children=[
-        html.Div(style={"flex": "1", "margin-right": "10px",
-                 "text-align": "right"}, children=['Stock Code']),
         dcc.Dropdown(
             options=stock_codes, id="stock_code_dropdown",
             value=stock_codes[0],
@@ -40,8 +38,41 @@ stock_code_dropdown = html.Div(
                    "border-radius": "8px", "color": "black", "width": "100px"},
         )
     ],
-    style={"display": "flex", "flex-direction": "row",
-           "align-items": "center", "color": "white", "width": "100%", "margin-left": "10px"},
+)
+
+prediction_method_dropdown = html.Div(
+    [
+        html.Div(style={"flex": "1", "margin-right": "10px",
+                 "text-align": "right"}, children=['Method']),
+        dcc.Dropdown(
+            options=prediction_methods, id="prediction_method_dropdown",
+            value=prediction_methods[0],
+            clearable=False,
+            searchable=True,
+            style={"background": "linear-gradient(90deg, rgba(1,145,148,1) 0%, rgba(153,208,138,1) 100%)",
+                   "border-radius": "8px", "width": "150px", "color": "black"},
+        ),
+    ],
+    style={"display": "flex", "flex-direction": "row", "flex": "1",
+           "align-items": "center", "color": "white", "margin-left": "10px", },
+)
+
+features = html.Div(
+    [
+        dbc.RadioItems(
+            id="feature-radios",
+            className="btn-group",
+            inputClassName="btn-check",
+            labelClassName="btn btn-outline-primary",
+            labelCheckedClassName="active",
+            options=[
+                {"label": "Close", "value": 1},
+                {"label": "Price of change", "value": 2},
+            ],
+            value=1,
+        ),
+    ],
+    className="radio-group",
 )
 
 navbar = dbc.Navbar(
@@ -60,7 +91,7 @@ navbar = dbc.Navbar(
                 style={"textDecoration": "none"},
             ),
             dbc.Collapse(
-                stock_code_dropdown,
+                prediction_method_dropdown,
                 id="navbar-collapse",
                 is_open=True,
                 navbar=True,
@@ -71,35 +102,25 @@ navbar = dbc.Navbar(
     dark=True,
 )
 
-prediction_method_dropdown = html.Div(
+
+@app.callback(
     [
-        dcc.Dropdown(
-            options=prediction_methods, id="prediction_method_dropdown",
-            value=prediction_methods[0],
-            clearable=False,
-            searchable=True,
-            style={"border-color": "white", "background": "linear-gradient(90deg, rgba(1,145,148,1) 0%, rgba(153,208,138,1) 100%)",
-                   "border-radius": "8px"},
-        ),
+        Output('graph-pred', 'figure'),
+        Output("loading-output-pred", "children")
     ],
-    style={"margin": "10px", "width": "150px"},
+    [
+        Input('stock_code_dropdown', 'value'),
+        Input('prediction_method_dropdown', 'value'),
+        Input('feature-radios', 'value')
+    ],
 )
-
-
-# @app.callback(
-#     Output('graph', 'figure'),
-#     [
-#         Input('stock_code_dropdown', 'value'),
-#         Input('prediction_method_dropdown', 'value')
-#     ],
-# )
-# def update_graph(stock_code, method):
-#     return updateFigure(stock_code, method)
+def update_graph(stock_code, method, feature):
+    return updateFigure(stock_code, method, feature), ''
 
 
 @app.callback(
-    Output('graph', 'figure'),
-    Input('graph-update', 'n_intervals')
+    Output('graph-btc', 'figure'),
+    Input('graph-btc-update', 'n_intervals')
 )
 def update_graph_live(n):
     df = pd.DataFrame(apiClient.get_historical_klines(
@@ -127,41 +148,94 @@ def update_graph_live(n):
 app.layout = html.Div([
     navbar,
     html.Div([
-        prediction_method_dropdown,
-        dcc.Graph(id="graph"),
-        dcc.Interval(
-            id='graph-update',
-            interval=1000 * 60,
-            n_intervals=0
+        dcc.Tabs(
+            id='tabs',
+            children=[
+                dcc.Tab(
+                    label='Prediction',
+                    children=[
+                        html.Div([
+                            html.Div(
+                                children=[
+                                    stock_code_dropdown,
+                                    features
+                                ],
+                                style={"display": "flex",
+                                       "flex-direction": "row",
+                                       "justify-content": "space-between",
+                                       "margin": "16px"}
+                            ),
+                            html.Div(
+                                [
+                                    dcc.Loading(
+                                        id="loading-pred",
+                                        type="default",
+                                        children=html.Div(
+                                            id="loading-output-pred"),
+                                    ),
+                                    dcc.Graph(id="graph-pred"),
+                                ],
+                                style={"position": "relative"}
+                            ),
+                            dcc.Interval(
+                                id='graph-pred-update',
+                                interval=1000 * 60,
+                                n_intervals=0
+                            )
+                        ])
+                    ]
+                ),
+                dcc.Tab(
+                    label='Price',
+                    children=[
+                        html.Div([
+                            html.H2(
+                                "BTC/USDT price (update per mintute)",
+                                style={"textAlign": "center", 'margin': "16px"}
+                            ),
+                            dcc.Graph(id="graph-btc"),
+                            dcc.Interval(
+                                id='graph-btc-update',
+                                interval=1000 * 60,
+                                n_intervals=0
+                            )
+                        ])
+                    ]
+                )
+            ]
         )
-    ])
+    ]
+    )
 ])
 
 
-def updateFigure(stock_code, method):
-    train, valid, pred_price = pred.get_predicted_price(
-        stock_code, method,
+def updateFigure(stock_code, method, feature):
+    train, actual, predicted = pred.get_predicted_price(
+        stock_code, method, feature
     )
-    trace1 = go.Scatter(
+
+    trainTrace = go.Scatter(
         name="Train",
         x=train.index,
         y=train['Close'],
     )
-    trace2 = go.Scatter(
-        name="Valid",
-        x=valid.index,
-        y=valid['Close'],
+    actualTrace = go.Scatter(
+        name="Actual",
+        x=actual.index,
+        y=actual['Close'],
+        line=dict(color='#f59e42')
     )
-    trace3 = go.Scatter(
+    predictedTrace = go.Scatter(
         name="Predicted",
-        x=valid.index,
-        y=valid['Predictions'],
+        x=predicted.index,
+        y=predicted["Close"],
     )
-    traces = [trace1, trace2, trace3]
+    traces = [trainTrace, actualTrace, predictedTrace]
 
     return go.Figure(data=traces, layout=go.Layout(
         title=go.layout.Title(
-            text=f"{stock_code} Stock Price Prediction using {method}"),
+            text=f"{stock_code} Stock Price Prediction using {method} method",
+        ),
     ))
 
 

@@ -1,20 +1,17 @@
-
-import plotly.graph_objects as go
 import math
+import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas_datareader as web
 import datetime as dt
 
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import load_model
-plt.style.use('fivethirtyeight')
 
 scaler = MinMaxScaler(feature_range=(0, 1))
 
 
 def get_valid_array(df, method):
-    model = load_model("saved_rnn.h5")
+    model = load_model(f"models/{method.lower()}_model.h5")
     data = df.filter(['Close'])
     dataset = data.values
     training_data_len = math.ceil(len(dataset) * .8)
@@ -36,16 +33,20 @@ def get_valid_array(df, method):
     predicted_stock_price = scaler.inverse_transform(predicted_stock_price)
 
     train = data[:training_data_len]
-    valid = data[training_data_len:]
-    valid['Predictions'] = predicted_stock_price
+    actual = data[training_data_len:]
 
-    return train, valid
+    d = {"Close": predicted_stock_price.flatten()}
+    predicted_stock_price = pd.DataFrame(data=d)
+    predicted_stock_price.index = actual.index
+
+    return train, actual, predicted_stock_price
 
 
-def get_predicted_price(code, method):
-    model = load_model("saved_rnn.h5")
+def get_predicted_price(code, method, feature):
+    model = load_model(f"models/{method.lower()}_model.h5")
     quote = web.DataReader(
-        code, data_source='yahoo', start='2018-01-01', end=dt.datetime.now().strftime("%Y-%m-%d"))
+        code, data_source='yahoo', start='2018-01-01', end=dt.datetime.now().strftime("%Y-%m-%d"),
+    )
     # create a new dataframe
     new_df = quote.filter(['Close'])
 
@@ -67,6 +68,17 @@ def get_predicted_price(code, method):
     # undo the scaling
     pred_price = scaler.inverse_transform(pred_price)
 
-    train, valid = get_valid_array(quote, method)
+    train, actual, predicted = get_valid_array(quote, method)
 
-    return train, valid, pred_price
+    today = dt.date.today()
+    today = dt.datetime(today.year, today.month, today.day)
+    today = today + dt.timedelta(days=1)
+
+    d = {"Close": [pred_price.item()]}
+    pred_price_ser = pd.DataFrame(
+        data=d, index=[today]
+    )
+
+    final_predicted_price_data = pd.concat([predicted, pred_price_ser])
+
+    return train, actual, final_predicted_price_data
